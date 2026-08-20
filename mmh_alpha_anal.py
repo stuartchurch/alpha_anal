@@ -37,7 +37,7 @@ if uploaded_file is not None:
     col1, col2 = st.columns(2)
     with col1:
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.countplot(data=df, x="nhs_app_use", order=["Never", "Rarely", "Monthly", "Weekly"], ax=ax)
+        sns.countplot(data=df, x="nhs_app_use", order=["Never", "Rarely", "Weekly", "Monthly"], ax=ax)
         ax.set_title("Participant NHS App Usage")
         ax.set_xlabel("")
         ax.set_ylabel("Participants")
@@ -134,12 +134,12 @@ if uploaded_file is not None:
     st.subheader("Mixed Effects Model (order effects) - primary inferential model")
     with st.expander("What it does & How to interpret"):
         st.write("""
-        * **What it does:** A Mixed Effects Model (specifically a Linear Mixed Model) is an advanced regression technique that accounts for both fixed effects (the predictable variables we are testing, like the prototype and the testing order) and random effects (the unpredictable, natural variance between individual human participants)[cite: 2].
-        * **Why we use it here:** In within-subjects testing, the order in which users see the designs (e.g., Baseline first vs. Treatment first) can heavily bias their scores due to learning effects or fatigue[cite: 2]. Furthermore, some users are just naturally harsher or more generous graders than others[cite: 2]. By setting groups=long_df["participant"], this model gives each user their own personal "baseline" score, allowing us to isolate the true impact of the prototype while mathematically controlling for individual participant quirks and order biases[cite: 2].
-        * **How to interpret:** Look at the P>|z| (p-value) column for the following specific rows[cite: 2]: 
-            * **prototype[T.Treatment] (Main Treatment Effect):** This tells you if the Treatment is genuinely better (or worse) than the Baseline[cite: 2]. If the p-value is < 0.05, there is a statistically significant difference in SEQ scores between the prototypes, independent of the order they were shown[cite: 2]. 
-            * **order[T.TB] (Main Order Effect):** This checks if the sequence itself changed how users scored the session[cite: 2]. A significant p-value here means that participants who saw the Treatment then Baseline (TB) rated things systematically higher or lower overall than the other group[cite: 2]. 
-            * **prototype[T.Treatment]:order[T.TB] (Interaction Effect):** This is the critical test for asymmetric order effects[cite: 2]. If this p-value is significant (< 0.05), it means the effectiveness of the prototype depends on the order it was shown (e.g., the Treatment only scores higher if they saw the Baseline first)[cite: 2]. If this happens, you cannot fully trust a simple main treatment effect because the testing sequence confounded the results[cite: 2].
+        * **What it does:** A Mixed Effects Model (specifically a Linear Mixed Model) is an advanced regression technique that accounts for both fixed effects (the predictable variables we are testing, like the prototype and the testing order) and random effects (the unpredictable, natural variance between individual human participants).
+        * **Why we use it here:** In within-subjects testing, the order in which users see the designs (e.g., Baseline first vs. Treatment first) can heavily bias their scores due to learning effects or fatigue. Furthermore, some users are just naturally harsher or more generous graders than others. By setting groups=long_df["participant"], this model gives each user their own personal "baseline" score, allowing us to isolate the true impact of the prototype while mathematically controlling for individual participant quirks and order biases.
+        * **How to interpret:** Look at the P>|z| (p-value) column for the following specific rows: 
+            * **prototype[T.Treatment] (Main Treatment Effect):** This tells you if the Treatment is genuinely better (or worse) than the Baseline. If the p-value is < 0.05, there is a statistically significant difference in SEQ scores between the prototypes, independent of the order they were shown. 
+            * **order[T.TB] (Main Order Effect):** This checks if the sequence itself changed how users scored the session. A significant p-value here means that participants who saw the Treatment then Baseline (TB) rated things systematically higher or lower overall than the other group. 
+            * **prototype[T.Treatment]:order[T.TB] (Interaction Effect):** This is the critical test for asymmetric order effects. If this p-value is significant (< 0.05), it means the effectiveness of the prototype depends on the order it was shown (e.g., the Treatment only scores higher if they saw the Baseline first). If this happens, you cannot fully trust a simple main treatment effect because the testing sequence confounded the results.
         """)
     
     model = smf.mixedlm("overall_seq ~ prototype * order", data=long_df, groups=long_df["participant"])
@@ -151,17 +151,17 @@ if uploaded_file is not None:
     with st.expander("What it does & How to interpret"):
         st.write("""
         **Wilcoxon Signed Ranks Test:**
-        * **What it does:** This is a non-parametric test used to compare two related samples to assess whether their population mean ranks differ[cite: 2]. It is the non-parametric equivalent of a paired t-test[cite: 2].
-        * **Why we use it here:** The Single Ease Question (SEQ) uses a 7-point Likert scale[cite: 2]. Because this data is ordinal (ranked categories) rather than continuous, it often violates the assumption of normal distribution required for a standard t-test[cite: 2]. The Wilcoxon test safely handles this ordinal data by comparing the magnitude and direction of the differences in SEQ scores between the baseline and treatment for each participant[cite: 2].
-        * **How to interpret:** Significant p-value (< 0.05): Users found a statistically significant difference in the ease of use between the two prototypes[cite: 2]. Check the median scores to see which one performed better[cite: 2].
+        * **What it does:** This is a non-parametric test used to compare two related samples to assess whether their population mean ranks differ. It is the non-parametric equivalent of a paired t-test.
+        * **Why we use it here:** The Single Ease Question (SEQ) uses a 7-point Likert scale. Because this data is ordinal (ranked categories) rather than continuous, it often violates the assumption of normal distribution required for a standard t-test. The Wilcoxon test safely handles this ordinal data by comparing the magnitude and direction of the differences in SEQ scores between the baseline and treatment for each participant.
+        * **How to interpret:** Significant p-value (< 0.05): Users found a statistically significant difference in the ease of use between the two prototypes. Check the median scores to see which one performed better.
         
         **Effect Size (Cohen's dz):**
-        * **What it does:** While p-values tell you if a statistically significant difference exists, effect size tells you how big or meaningful that difference actually is[cite: 2]. Cohen’s dz is the specific variation of Cohen's d used for within-subjects (paired) designs[cite: 2].
-        * **Why we use it here:** With a large enough sample size, even tiny, practically useless differences can become statistically significant[cite: 2]. Calculating dz standardizes the difference so you can understand the true impact of the treatment[cite: 2].
-        * **How to interpret:** Standard benchmarks for Cohen's $d$ (though context always matters in UX)[cite: 2]: 
-            * ~0.2: Small effect (a minor improvement)[cite: 2] 
-            * ~0.5: Medium effect (a noticeable improvement)[cite: 2] 
-            * ~0.8 or higher: Large effect (a massive difference in the user experience)[cite: 2]
+        * **What it does:** While p-values tell you if a statistically significant difference exists, effect size tells you how big or meaningful that difference actually is. Cohen’s dz is the specific variation of Cohen's d used for within-subjects (paired) designs.
+        * **Why we use it here:** With a large enough sample size, even tiny, practically useless differences can become statistically significant. Calculating dz standardizes the difference so you can understand the true impact of the treatment.
+        * **How to interpret:** Standard benchmarks for Cohen's $d$ (though context always matters in UX): 
+            * ~0.2: Small effect (a minor improvement) 
+            * ~0.5: Medium effect (a noticeable improvement) 
+            * ~0.8 or higher: Large effect (a massive difference in the user experience)
         """)
         
     stat, p_val_wilcoxon = wilcoxon(df["baseline_overall_seq"], df["treatment_overall_seq"])
@@ -176,9 +176,9 @@ if uploaded_file is not None:
     st.subheader("McNemar Test - Task Success")
     with st.expander("What it does & How to interpret"):
         st.write("""
-        * **What it does:** The McNemar test is used to determine if there is a statistically significant difference in proportions between two paired groups[cite: 2]. It is specifically designed for binary, categorical data (e.g., Pass/Fail or Yes/No)[cite: 2].
-        * **Why we use it here:** Because the same participants completed tasks on both prototypes, their success rates are dependent[cite: 2]. The McNemar test ignores the users who had the same outcome on both prototypes (e.g., failed both or passed both)[cite: 2]. Instead, it looks only at the "discordant pairs"—the users who failed the baseline but passed the treatment, versus those who passed the baseline but failed the treatment[cite: 2].
-        * **How to interpret:** Significant p-value (< 0.05): One prototype had a significantly higher success rate than the other[cite: 2]. Non-significant p-value: The difference in task success between the baseline and treatment is not large enough to rule out random chance[cite: 2].
+        * **What it does:** The McNemar test is used to determine if there is a statistically significant difference in proportions between two paired groups. It is specifically designed for binary, categorical data (e.g., Pass/Fail or Yes/No).
+        * **Why we use it here:** Because the same participants completed tasks on both prototypes, their success rates are dependent. The McNemar test ignores the users who had the same outcome on both prototypes (e.g., failed both or passed both). Instead, it looks only at the "discordant pairs"—the users who failed the baseline but passed the treatment, versus those who passed the baseline but failed the treatment.
+        * **How to interpret:** Significant p-value (< 0.05): One prototype had a significantly higher success rate than the other. Non-significant p-value: The difference in task success between the baseline and treatment is not large enough to rule out random chance.
         """)
         
     b_binary = (df["baseline_success"] > 0).astype(int)
@@ -195,9 +195,9 @@ if uploaded_file is not None:
     st.subheader("Preference binomial test")
     with st.expander("What it does & How to interpret"):
         st.write("""
-        * **What it does:** The binomial test compares an observed frequency of two categories against an expected distribution[cite: 2]. In most preference testing, the expected baseline distribution is a 50/50 split (random chance)[cite: 2].
-        * **Why we use it here:** At the end of the session, you likely asked participants, "Which prototype did you prefer?"[cite: 2]. This test evaluates whether the number of votes for the 'treatment' prototype is statistically meaningful, or if it could have just happened by flipping a coin[cite: 2].
-        * **How to interpret:** Significant p-value (< 0.05): There is a clear, statistically significant preference for one prototype over the other[cite: 2]. Non-significant p-value: The preference is too evenly split to declare a definitive winner; any slight advantage may just be statistical noise[cite: 2].
+        * **What it does:** The binomial test compares an observed frequency of two categories against an expected distribution. In most preference testing, the expected baseline distribution is a 50/50 split (random chance).
+        * **Why we use it here:** At the end of the session, you likely asked participants, "Which prototype did you prefer?". This test evaluates whether the number of votes for the 'treatment' prototype is statistically meaningful, or if it could have just happened by flipping a coin.
+        * **How to interpret:** Significant p-value (< 0.05): There is a clear, statistically significant preference for one prototype over the other. Non-significant p-value: The preference is too evenly split to declare a definitive winner; any slight advantage may just be statistical noise.
         """)
         
     n_treatment = df["preferred_realworld"].eq("Treatment").sum()
