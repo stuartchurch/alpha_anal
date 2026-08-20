@@ -144,7 +144,7 @@ if uploaded_file is not None:
     
     model = smf.mixedlm("overall_seq ~ prototype * order", data=long_df, groups=long_df["participant"])
     results = model.fit()
-    st.text(results.summary().as_text())
+    st.code(results.summary().as_text(), language="text")
 
     # B. Wilcoxon & Cohen's dz
     st.subheader("Wilcoxon Signed Ranks Tests & Effect Size (Cohen's dz)")
