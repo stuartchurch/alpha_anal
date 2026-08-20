@@ -7,10 +7,40 @@ import statsmodels.formula.api as smf
 from scipy.stats import wilcoxon, binomtest
 from statsmodels.stats.contingency_tables import mcnemar
 
-# Page config & styling
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="UX Analysis Dashboard", layout="wide")
-plt.style.use("fivethirtyeight")
-sns.set_palette("Set2")
+
+# --- THEME SWITCHER ---
+st.sidebar.header("Dashboard Settings")
+theme = st.sidebar.selectbox("Choose Chart Theme", ["FiveThirtyEight", "Microsoft", "Excel", "NHS"])
+
+# Apply selected theme
+if theme == "FiveThirtyEight":
+    plt.style.use("fivethirtyeight")
+    sns.set_palette("Set2")
+    semantic_colors = ["#fc4f30", "#e5ae38", "#6d904f"]  # 538 Red, Yellow, Green
+    
+elif theme == "Microsoft":
+    plt.style.use("default")
+    sns.set_style("whitegrid")
+    # Microsoft Brand Colors: Blue, Green, Yellow, Orange/Red, Grey
+    sns.set_palette(["#00A4EF", "#7FBA00", "#FFB900", "#F25022", "#737373"])
+    semantic_colors = ["#F25022", "#FFB900", "#7FBA00"]  # MS Red, Yellow, Green
+    
+elif theme == "Excel":
+    plt.style.use("default")
+    sns.set_style("whitegrid")
+    # Standard Office 2016+ Default Palette
+    sns.set_palette(["#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47"])
+    semantic_colors = ["#ED7D31", "#FFC000", "#70AD47"]  # Excel Orange/Red, Yellow, Green
+    
+elif theme == "NHS":
+    plt.style.use("default")
+    sns.set_style("white")
+    # NHS Brand Guidelines: NHS Blue, Light Blue, Aqua, Dark Grey, Warm Yellow, Focus Red
+    sns.set_palette(["#005EB8", "#41B6E6", "#00A9CE", "#425563", "#FFB81C", "#DA291C"])
+    # NHS Emergency Red, Warm Yellow, NHS Green
+    semantic_colors = ["#DA291C", "#FFB81C", "#007F3B"]
 
 st.title("UX Prototype Analysis: Baseline vs. Treatment")
 
@@ -37,7 +67,7 @@ if uploaded_file is not None:
     col1, col2 = st.columns(2)
     with col1:
         fig, ax = plt.subplots(figsize=(10, 6))
-        sns.countplot(data=df, x="nhs_app_use", order=["Never", "Rarely", "Weekly", "Monthly"], ax=ax)
+        sns.countplot(data=df, x="nhs_app_use", order=["Never", "Rarely", "Monthly", "Weekly"], ax=ax)
         ax.set_title("Participant NHS App Usage")
         ax.set_xlabel("")
         ax.set_ylabel("Participants")
@@ -47,6 +77,8 @@ if uploaded_file is not None:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.countplot(data=df, x="screening_knowledge", order=["Low", "Medium", "High"], ax=ax)
         ax.set_title("Screening Knowledge")
+        ax.set_xlabel("")
+        ax.set_ylabel("")
         st.pyplot(fig)
 
     # Row 2: Success & Interpretation
@@ -59,7 +91,8 @@ if uploaded_file is not None:
         plot_df = plot_df.reindex(["Failure", "Success With Friction", "Success No Friction"]).fillna(0)
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        plot_df.T.plot(kind="bar", stacked=True, ax=ax)
+        # Applied dynamic semantic colors here
+        plot_df.T.plot(kind="bar", stacked=True, ax=ax, color=semantic_colors)
         ax.set_title("Task Success by Prototype")
         ax.set_ylabel("Participants")
         plt.xticks(rotation=0)
@@ -73,7 +106,8 @@ if uploaded_file is not None:
         interp_df = interp_df.reindex(["Incorrect", "Partially Correct", "Correct"]).fillna(0)
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        interp_df.T.plot(kind="bar", stacked=True, ax=ax)
+        # Applied dynamic semantic colors here
+        interp_df.T.plot(kind="bar", stacked=True, ax=ax, color=semantic_colors)
         ax.set_title("Interpretation Accuracy")
         ax.set_ylabel("Proportion")
         plt.xticks(rotation=0)
@@ -87,7 +121,7 @@ if uploaded_file is not None:
         
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.boxplot(data=plot_df, x="Prototype", y="SEQ", ax=ax)
-        sns.stripplot(data=plot_df, x="Prototype", y="SEQ", color="black", alpha=0.4, ax=ax)
+        sns.stripplot(data=plot_df, x="Prototype", y="SEQ", color="#333333", alpha=0.4, ax=ax)
         ax.set_title("Ease of Finding Result")
         st.pyplot(fig)
         
@@ -97,7 +131,7 @@ if uploaded_file is not None:
         
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.boxplot(data=seq_plot, x="Prototype", y="Overall SEQ", ax=ax)
-        sns.stripplot(data=seq_plot, x="Prototype", y="Overall SEQ", color="black", alpha=0.4, ax=ax)
+        sns.stripplot(data=seq_plot, x="Prototype", y="Overall SEQ", color="#333333", alpha=0.4, ax=ax)
         ax.set_title("Overall SEQ Distribution")
         st.pyplot(fig)
 
@@ -106,14 +140,14 @@ if uploaded_file is not None:
     with col7:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.histplot(df["seq_difference"], bins=10, ax=ax)
-        ax.axvline(df["seq_difference"].mean(), color="red", linestyle="--")
+        ax.axvline(df["seq_difference"].mean(), color=semantic_colors[0], linestyle="--")
         ax.set_title("Treatment - Baseline Difference Scores")
         st.pyplot(fig)
         
     with col8:
         fig, ax = plt.subplots(figsize=(10, 6))
         sns.boxplot(data=df, x="order", y="seq_difference", ax=ax)
-        sns.stripplot(data=df, x="order", y="seq_difference", color="black", ax=ax)
+        sns.stripplot(data=df, x="order", y="seq_difference", color="#333333", ax=ax)
         ax.set_title("Difference Scores by Order Group")
         ax.set_ylabel("Treatment − Baseline")
         st.pyplot(fig)
@@ -123,6 +157,7 @@ if uploaded_file is not None:
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.countplot(data=df, x="preferred_realworld", ax=ax)
     ax.set_title("Preferred Prototype for Real Results")
+    ax.set_xlabel("")
     st.pyplot(fig)
 
     st.divider()
@@ -158,7 +193,7 @@ if uploaded_file is not None:
         **Effect Size (Cohen's dz):**
         * **What it does:** While p-values tell you if a statistically significant difference exists, effect size tells you how big or meaningful that difference actually is. Cohen’s dz is the specific variation of Cohen's d used for within-subjects (paired) designs.
         * **Why we use it here:** With a large enough sample size, even tiny, practically useless differences can become statistically significant. Calculating dz standardizes the difference so you can understand the true impact of the treatment.
-        * **How to interpret:** Standard benchmarks for Cohen's $d$ (though context always matters in UX): 
+        * **How to interpret:** Standard benchmarks for Cohen's dz (though context always matters in UX): 
             * ~0.2: Small effect (a minor improvement) 
             * ~0.5: Medium effect (a noticeable improvement) 
             * ~0.8 or higher: Large effect (a massive difference in the user experience)
