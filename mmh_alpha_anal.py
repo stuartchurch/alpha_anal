@@ -3,241 +3,482 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import statsmodels.formula.api as smf
-from scipy.stats import wilcoxon, binomtest
+import plotly.graph_objects as go
+import scipy.stats as stats
 from statsmodels.stats.contingency_tables import mcnemar
+import io
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="UX Analysis Dashboard", layout="wide")
+# ==========================================
+# PAGE CONFIG & THEME SETUP
+# ==========================================
+st.set_page_config(page_title="UX Prototype Analysis", layout="wide")
 
-# --- THEME SWITCHER ---
+# NHS Corporate Identity Colors
+NHS_COLORS = {
+    "blue": "#005EB8",
+    "green": "#009639",
+    "red": "#DA291C",
+    "yellow": "#FAE100",
+    "dark_grey": "#425563",
+    "black": "#231f20",
+    "white": "#FFFFFF"
+}
+
+def apply_theme(theme_choice, custom_colors=None, typography=None, borders=None):
+    plt.rcParams.update(plt.rcParamsDefault)
+    
+    if theme_choice == "NHS":
+        sns.set_theme(style="whitegrid", rc={"axes.edgecolor": NHS_COLORS["dark_grey"]})
+        return [NHS_COLORS["blue"], NHS_COLORS["green"], NHS_COLORS["red"], NHS_COLORS["yellow"], NHS_COLORS["dark_grey"]]
+    
+    elif theme_choice == "FiveThirtyEight":
+        plt.style.use('fivethirtyeight')
+        return ['#008fd5', '#fc4f30', '#e5ae38', '#6d904f', '#8b8b8b']
+    
+    else: # Custom
+        sns.set_theme(style="white") 
+        if typography:
+            plt.rcParams.update({
+                'font.family': typography['font'],
+                'axes.titlesize': typography['title_size'],
+                'axes.labelsize': typography['label_size'],
+                'xtick.labelsize': typography['tick_size'],
+                'ytick.labelsize': typography['tick_size']
+            })
+        if borders:
+            plt.rcParams.update({
+                'axes.grid': borders['show_grid'],
+                'axes.grid.axis': borders['grid_axis'],
+                'axes.spines.top': borders['show_top'],
+                'axes.spines.right': borders['show_right'],
+                'axes.spines.left': borders['show_left'],
+                'axes.spines.bottom': True
+            })
+        return custom_colors if custom_colors else ["#4c72b0", "#55a868", "#c44e52"]
+
+# Helpers for UI, Formatting, and Downloading
+def download_plot(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
+    buf.seek(0)
+    return buf
+
+def chart_header(default_title, default_ylabel, default_xlabel, key_prefix):
+    """Generates the Edit popover and Download button above charts, split evenly to prevent overlap"""
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.popover("Edit titles & axes", use_container_width=True):
+            t = st.text_input("Chart Title", default_title, key=f"{key_prefix}_t")
+            x = st.text_input("X-Axis Label", default_xlabel, key=f"{key_prefix}_x")
+            y = st.text_input("Y-Axis Label", default_ylabel, key=f"{key_prefix}_y")
+    return t, y, x, c2
+
+def format_axes(ax):
+    """Helper to strictly enforce grid settings against pandas/seaborn defaults on categorical charts"""
+    if theme_choice == "Custom" and border_settings:
+        if not border_settings['show_grid']:
+            ax.grid(False)
+        else:
+            ax.grid(True, axis=border_settings['grid_axis'])
+            if border_settings['grid_axis'] == 'x':
+                ax.grid(False, axis='y')
+            elif border_settings['grid_axis'] == 'y':
+                ax.grid(False, axis='x')
+    elif theme_choice == "NHS":
+        # Pandas auto-draws x-grids on bar charts. We aggressively remove them here.
+        ax.grid(False, axis='x')
+        ax.grid(True, axis='y', color='#e6e6e6')
+
+# ==========================================
+# SIDEBAR
+# ==========================================
 st.sidebar.header("Dashboard Settings")
-theme = st.sidebar.selectbox("Choose Chart Theme", ["FiveThirtyEight", "Microsoft", "Excel", "NHS"])
+theme_choice = st.sidebar.selectbox("Choose Chart Theme", ["NHS", "FiveThirtyEight", "Custom"])
 
-# Apply selected theme
-if theme == "FiveThirtyEight":
-    plt.style.use("fivethirtyeight")
-    sns.set_palette("Set2")
-    semantic_colors = ["#fc4f30", "#e5ae38", "#6d904f"]  # 538 Red, Yellow, Green
-    
-elif theme == "Microsoft":
-    plt.style.use("default")
-    sns.set_style("whitegrid")
-    # Microsoft Brand Colors: Blue, Green, Yellow, Orange/Red, Grey
-    sns.set_palette(["#00A4EF", "#7FBA00", "#FFB900", "#F25022", "#737373"])
-    semantic_colors = ["#F25022", "#FFB900", "#7FBA00"]  # MS Red, Yellow, Green
-    
-elif theme == "Excel":
-    plt.style.use("default")
-    sns.set_style("whitegrid")
-    # Standard Office 2016+ Default Palette
-    sns.set_palette(["#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47"])
-    semantic_colors = ["#ED7D31", "#FFC000", "#70AD47"]  # Excel Orange/Red, Yellow, Green
-    
-elif theme == "NHS":
-    plt.style.use("default")
-    sns.set_style("white")
-    # NHS Brand Guidelines: NHS Blue, Light Blue, Aqua, Dark Grey, Warm Yellow, Focus Red
-    sns.set_palette(["#005EB8", "#41B6E6", "#00A9CE", "#425563", "#FFB81C", "#DA291C"])
-    # NHS Emergency Red, Warm Yellow, NHS Green
-    semantic_colors = ["#DA291C", "#FFB81C", "#007F3B"]
+custom_palette, typography_settings, border_settings = None, None, None
 
+if theme_choice == "Custom":
+    st.sidebar.markdown("### 🎨 Custom Theme Editor")
+    with st.sidebar.expander("1. Colors", expanded=False):
+        c1 = st.color_picker("Base Chart Color", "#4c72b0")
+        c2 = st.color_picker("Success Color", "#55a868")
+        c3 = st.color_picker("Failure/Friction Color", "#c44e52")
+        custom_palette = [c1, c2, c3]
+        
+    with st.sidebar.expander("2. Typography", expanded=True):
+        custom_font = st.selectbox("Font Family", ["sans-serif", "serif", "monospace"])
+        typography_settings = {
+            'font': custom_font,
+            'title_size': st.slider("Chart Title Size", 10, 24, 16),
+            'label_size': st.slider("Axis Label Size", 8, 20, 12),
+            'tick_size': st.slider("Tick Label Size", 6, 16, 11)
+        }
+
+    with st.sidebar.expander("3. Grid & Borders", expanded=True):
+        border_settings = {
+            'show_grid': st.checkbox("Show Gridlines", value=True),
+            'grid_axis': st.selectbox("Gridline Direction", ["y", "x", "both"]),
+            'show_top': st.checkbox("Show Top Border", value=False),
+            'show_right': st.checkbox("Show Right Border", value=False),
+            'show_left': st.checkbox("Show Left Border", value=False)
+        }
+
+palette = apply_theme(theme_choice, custom_palette, typography_settings, border_settings)
+
+# ==========================================
+# DATA LOADING & TOP MENU BUTTONS
+# ==========================================
 st.title("UX Prototype Analysis: Baseline vs. Treatment")
 
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+if 'use_demo' not in st.session_state:
+    st.session_state.use_demo = False
 
+# Try to load the demo CSV into memory for the download button
+try:
+    with open('nhs_app_usability_test_data.csv', 'r') as f:
+        demo_csv_data = f.read()
+except FileNotFoundError:
+    demo_csv_data = ""
+
+# Main Control Buttons - tightly grouped in equal columns and left aligned
+col_btn1, col_btn2, col_btn3, col_pad = st.columns([1, 1, 1, 3])
+with col_btn1:
+    if st.button("Run demo with simulated data", use_container_width=True):
+        st.session_state.use_demo = True
+
+with col_btn2:
+    st.download_button(
+        label="Download simulated data", 
+        data=demo_csv_data, 
+        file_name="nhs_app_usability_test_data.csv", 
+        mime="text/csv", 
+        use_container_width=True
+    )
+
+with col_btn3:
+    with st.popover("Data notes", use_container_width=True):
+        st.markdown("""
+        **Participant Demographics**
+        * **participant_no**: Participant number (16 in total, P01 to P16).
+        * **order**: Order in which participants receive the prototypes (8 participants in each group). Half of the users will have the baseline (existing design) prototype first, the other half will have the new design first. BT = Baseline then treatment, TB = treatment then baseline.
+        * **nhs_app_use**: Frequency of NHS App use (never / weekly / monthly / rarely / na).
+        * **digital_literacy**: Level of digital literacy (0 = lowest, 5 = highest, or na).
+        * **age**: Age group (18 - 24 / 25 - 34 / 35 - 44 / 45 - 54 / 55 - 64).
+        
+        **Navigation & First Clicks**
+        * **baseline_firstchoice** / **treatment_firstchoice**: Records whether they choose to follow the 'Test Results' or 'Messages' path first (TR = Test Results first, M = Messages first).
+        
+        **Task Success Measures**
+        * **baseline_user_success** / **treatment_user_success**: Recorded when the user considers that they have found the test result (0 = No/not found, 1 = Yes, with some friction, 2 = Yes, easily).
+        * **baseline_system_success** / **treatment_system_success**: Recorded when the user locates a screen with the test result on it (0 = No/not found, 1 = Yes, with some friction, 2 = Yes, easily).
+        
+        **Single Ease Questions (SEQ)**
+        * **baseline_seq_find** / **treatment_seq_find**: Participants rated how easy or difficult it was to locate where the test result was (1 = very difficult, 7 = very easy).
+        * **baseline_seq_understand** / **treatment_seq_understand**: Participants rated how easy or difficult it was to understand what the result meant (1 = very difficult, 7 = very easy).
+        
+        **Preferences**
+        * **easier_design**: Which design was easier to use? (T = Treatment easiest, B = Baseline easiest).
+        * **preferred_realworld**: Which version would you rather use to receive a real result? (T = Treatment preferred, B = Baseline preferred).
+        """)
+
+st.write("") # Spacer
+
+uploaded_file = st.file_uploader("Upload CSV File", type="csv")
 if uploaded_file is not None:
-    # --- 1. DATA PREP ---
-    df = pd.read_csv(uploaded_file)
-    
-    # Calculate SEQ averages & differences
-    df["baseline_overall_seq"] = (df["baseline_seq_find"] + df["baseline_seq_understand"] + df["baseline_seq_nextsteps"]) / 3
-    df["treatment_overall_seq"] = (df["treatment_seq_find"] + df["treatment_seq_understand"] + df["treatment_seq_nextsteps"]) / 3
-    df["seq_difference"] = df["treatment_overall_seq"] - df["baseline_overall_seq"]
-    
-    # Create long-form dataframe for mixed modeling
-    baseline = pd.DataFrame({"participant": df["participant_id"], "order": df["order"], "prototype": "Baseline", "overall_seq": df["baseline_overall_seq"]})
-    treatment = pd.DataFrame({"participant": df["participant_id"], "order": df["order"], "prototype": "Treatment", "overall_seq": df["treatment_overall_seq"]})
-    long_df = pd.concat([baseline, treatment])
+    st.session_state.use_demo = False
+    data_source = uploaded_file
+elif st.session_state.use_demo:
+    data_source = 'nhs_app_usability_test_data.csv'
+else:
+    data_source = None
 
-    # --- 2. VISUALIZATIONS ---
-    st.header("1. Visual Analysis")
-    
-    # Row 1: Demographics
-    col1, col2 = st.columns(2)
-    with col1:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.countplot(data=df, x="nhs_app_use", order=["Never", "Rarely", "Monthly", "Weekly"], ax=ax)
-        ax.set_title("Participant NHS App Usage")
-        ax.set_xlabel("")
-        ax.set_ylabel("Participants")
-        st.pyplot(fig)
-        
-    with col2:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.countplot(data=df, x="screening_knowledge", order=["Low", "Medium", "High"], ax=ax)
-        ax.set_title("Screening Knowledge")
-        ax.set_xlabel("")
-        ax.set_ylabel("")
-        st.pyplot(fig)
+if not data_source:
+    st.info("Please upload a CSV file or run the demo to view the analysis.")
+    st.stop()
 
-    # Row 2: Success & Interpretation
-    col3, col4 = st.columns(2)
-    with col3:
-        success_map = {0: "Failure", 1: "Success With Friction", 2: "Success No Friction"}
-        b_succ = df["baseline_success"].map(success_map).value_counts()
-        t_succ = df["treatment_success"].map(success_map).value_counts()
-        plot_df = pd.DataFrame({"Baseline": b_succ, "Treatment": t_succ}).fillna(0)
-        plot_df = plot_df.reindex(["Failure", "Success With Friction", "Success No Friction"]).fillna(0)
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        # Applied dynamic semantic colors here
-        plot_df.T.plot(kind="bar", stacked=True, ax=ax, color=semantic_colors)
-        ax.set_title("Task Success by Prototype")
-        ax.set_ylabel("Participants")
-        plt.xticks(rotation=0)
-        st.pyplot(fig)
-        
-    with col4:
-        interpret_map = {0: "Incorrect", 1: "Partially Correct", 2: "Correct"}
-        base = df["baseline_interpretation"].map(interpret_map).value_counts(normalize=True)
-        treat = df["treatment_interpretation"].map(interpret_map).value_counts(normalize=True)
-        interp_df = pd.DataFrame({"Baseline": base, "Treatment": treat}).fillna(0)
-        interp_df = interp_df.reindex(["Incorrect", "Partially Correct", "Correct"]).fillna(0)
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        # Applied dynamic semantic colors here
-        interp_df.T.plot(kind="bar", stacked=True, ax=ax, color=semantic_colors)
-        ax.set_title("Interpretation Accuracy")
-        ax.set_ylabel("Proportion")
-        plt.xticks(rotation=0)
-        st.pyplot(fig)
+@st.cache_data
+def load_data(source):
+    df = pd.read_csv(source)
+    df.columns = df.columns.str.strip().str.replace(' ', '')
+    return df
 
-    # Row 3: SEQ Boxplots
-    col5, col6 = st.columns(2)
-    with col5:
-        plot_df = pd.DataFrame({"Baseline": df["baseline_seq_find"], "Treatment": df["treatment_seq_find"]})
-        plot_df = plot_df.melt(var_name="Prototype", value_name="SEQ")
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(data=plot_df, x="Prototype", y="SEQ", ax=ax)
-        sns.stripplot(data=plot_df, x="Prototype", y="SEQ", color="#333333", alpha=0.4, ax=ax)
-        ax.set_title("Ease of Finding Result")
-        st.pyplot(fig)
-        
-    with col6:
-        seq_plot = pd.DataFrame({"Baseline": df["baseline_overall_seq"], "Treatment": df["treatment_overall_seq"]})
-        seq_plot = seq_plot.melt(var_name="Prototype", value_name="Overall SEQ")
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(data=seq_plot, x="Prototype", y="Overall SEQ", ax=ax)
-        sns.stripplot(data=seq_plot, x="Prototype", y="Overall SEQ", color="#333333", alpha=0.4, ax=ax)
-        ax.set_title("Overall SEQ Distribution")
-        st.pyplot(fig)
+df = load_data(data_source)
+n_total = len(df)
 
-    # Row 4: Differences & Order Effects
-    col7, col8 = st.columns(2)
-    with col7:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.histplot(df["seq_difference"], bins=10, ax=ax)
-        ax.axvline(df["seq_difference"].mean(), color=semantic_colors[0], linestyle="--")
-        ax.set_title("Treatment - Baseline Difference Scores")
-        st.pyplot(fig)
-        
-    with col8:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.boxplot(data=df, x="order", y="seq_difference", ax=ax)
-        sns.stripplot(data=df, x="order", y="seq_difference", color="#333333", ax=ax)
-        ax.set_title("Difference Scores by Order Group")
-        ax.set_ylabel("Treatment − Baseline")
-        st.pyplot(fig)
+# ==========================================
+# SECTION 1: PARTICIPANT PROFILES
+# ==========================================
+st.header("1. Participant Profiles")
+st.markdown("Demographic distributions by testing order (BT = Baseline First, TB = Treatment First)")
 
-    # Row 5: Preference
-    st.subheader("Prototype Preference")
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.countplot(data=df, x="preferred_realworld", ax=ax)
-    ax.set_title("Preferred Prototype for Real Results")
-    ax.set_xlabel("")
+with st.expander("What it does & How to interpret"):
+    st.write("Displays the demographic breakdown of participants, split by the order in which they tested the prototypes. Ensure that the blue and green bars are relatively balanced across categories.")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    t, y, x, dl_col = chart_header("NHS App Use", "Participant Count", "Usage Frequency", "use")
+    fig_use, ax_use = plt.subplots(figsize=(5, 4))
+    sns.countplot(data=df, x='nhs_app_use', hue='order', ax=ax_use, palette=palette[:2])
+    ax_use.set_title(t); ax_use.set_ylabel(y); ax_use.set_xlabel(x)
+    format_axes(ax_use)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig_use), "nhs_app_use.png", key="dl_use", use_container_width=True)
+    st.pyplot(fig_use)
+
+with col2:
+    t, y, x, dl_col = chart_header("Digital Literacy", "Participant Count", "Score (0=Low, 5=High)", "lit")
+    fig_lit, ax_lit = plt.subplots(figsize=(5, 4))
+    sns.countplot(data=df, x='digital_literacy', hue='order', ax=ax_lit, palette=palette[:2])
+    ax_lit.set_title(t); ax_lit.set_ylabel(y); ax_lit.set_xlabel(x)
+    format_axes(ax_lit)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig_lit), "digital_literacy.png", key="dl_lit", use_container_width=True)
+    st.pyplot(fig_lit)
+
+with col3:
+    t, y, x, dl_col = chart_header("Age Group", "Participant Count", "Age", "age")
+    fig_age, ax_age = plt.subplots(figsize=(5, 4))
+    age_order = sorted(df['age'].dropna().unique())
+    sns.countplot(data=df, x='age', hue='order', ax=ax_age, palette=palette[:2], order=age_order)
+    ax_age.set_title(t); ax_age.set_ylabel(y); ax_age.set_xlabel(x)
+    format_axes(ax_age)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig_age), "age_group.png", key="dl_age", use_container_width=True)
+    st.pyplot(fig_age)
+
+st.divider()
+
+# ==========================================
+# SECTION 2: FIRST CHOICES
+# ==========================================
+st.header("2. First Navigational Choices")
+
+with st.expander("What it does & How to interpret (McNemar's Test)"):
+    st.write("McNemar's test checks if a design change caused users to significantly shift their categorical choice. A p-value < 0.05 indicates the change in behavior is statistically significant.")
+
+crosstab = pd.crosstab(df['baseline_firstchoice'], df['treatment_firstchoice'])
+mac_result = mcnemar(crosstab, exact=True)
+
+col1, col2 = st.columns([2, 1])
+with col1:
+    t, y, x, dl_col = chart_header("First Navigational Choice: Baseline vs Treatment", "Number of Participants", "Prototype Option", "fc")
+    fig_fc, ax_fc = plt.subplots(figsize=(8, 5))
+    choices = pd.DataFrame({'Baseline': df['baseline_firstchoice'].value_counts(), 'Treatment': df['treatment_firstchoice'].value_counts()}).fillna(0)
+    choices.T.plot(kind='bar', stacked=False, ax=ax_fc, color=palette[:2])
+    ax_fc.set_title(t); ax_fc.set_ylabel(y); ax_fc.set_xlabel(x)
+    ax_fc.set_xticklabels(ax_fc.get_xticklabels(), rotation=0)
+    format_axes(ax_fc)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig_fc), "first_choices.png", key="dl_fc", use_container_width=True)
+    st.pyplot(fig_fc)
+
+with col2:
+    st.metric("McNemar's P-Value", f"{mac_result.pvalue:.4f}")
+    if mac_result.pvalue < 0.05: st.success("Statistically significant shift in behavior.")
+    else: st.info("No statistically significant difference.")
+
+st.divider()
+
+# ==========================================
+# SECTION 3: TASK SUCCESS
+# ==========================================
+st.header("3. Task Success")
+
+with st.expander("What it does & How to interpret (Wilcoxon & Mann-Whitney)"):
+    st.write("**Wilcoxon Signed-Rank:** Compares paired ordinal success severity scores. P-value < 0.05 means one prototype is significantly better.\n\n**Mann-Whitney U:** Checks for order effects by comparing the improvement scores of the BT group against the TB group. P-value < 0.05 indicates a learning effect biased the results.")
+
+user_stat, user_p = stats.wilcoxon(df['baseline_user_success'], df['treatment_user_success'])
+sys_stat, sys_p = stats.wilcoxon(df['baseline_system_success'], df['treatment_system_success'])
+
+m1, m2 = st.columns(2)
+m1.metric("User Success Wilcoxon P-Value", f"{user_p:.4f}")
+m2.metric("System Success Wilcoxon P-Value", f"{sys_p:.4f}")
+
+# --- 3a. Task Success Distributions & Transitions (Individual Charts) ---
+st.subheader("Task Success Distribution & Transitions")
+def get_counts(series):
+    return series.value_counts().reindex([0, 1, 2], fill_value=0)
+
+success_labels = ['0: Not Found', '1: Found (Friction)', '2: Found (Easily)']
+user_df = pd.DataFrame({'Baseline': get_counts(df['baseline_user_success']), 'Treatment': get_counts(df['treatment_user_success'])})
+sys_df = pd.DataFrame({'Baseline': get_counts(df['baseline_system_success']), 'Treatment': get_counts(df['treatment_system_success'])})
+
+# Row 1: Distributions
+col_sd1, col_sd2 = st.columns(2)
+with col_sd1:
+    t, y, x, dl_col = chart_header("User-Perceived Success Distribution", "Number of Participants", "Success Level", "user_dist")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    user_df.plot(kind='bar', ax=ax, color=palette[:2])
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    ax.set_xticklabels(success_labels, rotation=0)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "user_success_dist.png", key="dl_user_dist", use_container_width=True)
     st.pyplot(fig)
 
-    st.divider()
+with col_sd2:
+    t, y, x, dl_col = chart_header("System-Measured Success Distribution", "Number of Participants", "Success Level", "sys_dist")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sys_df.plot(kind='bar', ax=ax, color=palette[:2])
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    ax.set_xticklabels(success_labels, rotation=0)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "sys_success_dist.png", key="dl_sys_dist", use_container_width=True)
+    st.pyplot(fig)
 
-    # --- 3. STATISTICAL ANALYSIS ---
-    st.header("2. Statistical Testing")
+# Row 2: Transitions
+col_st1, col_st2 = st.columns(2)
+with col_st1:
+    t, y, x, dl_col = chart_header("User Success Transitions", "Baseline", "Treatment", "user_trans")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    user_crosstab = pd.crosstab(df['baseline_user_success'], df['treatment_user_success'], rownames=['Baseline'], colnames=['Treatment']).reindex(index=[0, 1, 2], columns=[0, 1, 2], fill_value=0)
+    sns.heatmap(user_crosstab, annot=True, cmap='Greens', fmt='g', ax=ax, cbar=False)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    # Heatmaps deliberately omit format_axes() to prevent ugly lines drawing across the colored cells
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "user_success_trans.png", key="dl_user_trans", use_container_width=True)
+    st.pyplot(fig)
 
-    # A. Mixed Modeling
-    st.subheader("Mixed Effects Model (order effects) - primary inferential model")
-    with st.expander("What it does & How to interpret"):
-        st.write("""
-        * **What it does:** A Mixed Effects Model (specifically a Linear Mixed Model) is an advanced regression technique that accounts for both fixed effects (the predictable variables we are testing, like the prototype and the testing order) and random effects (the unpredictable, natural variance between individual human participants).
-        * **Why we use it here:** In within-subjects testing, the order in which users see the designs (e.g., Baseline first vs. Treatment first) can heavily bias their scores due to learning effects or fatigue. Furthermore, some users are just naturally harsher or more generous graders than others. By setting groups=long_df["participant"], this model gives each user their own personal "baseline" score, allowing us to isolate the true impact of the prototype while mathematically controlling for individual participant quirks and order biases.
-        * **How to interpret:** Look at the P>|z| (p-value) column for the following specific rows: 
-            * **prototype[T.Treatment] (Main Treatment Effect):** This tells you if the Treatment is genuinely better (or worse) than the Baseline. If the p-value is < 0.05, there is a statistically significant difference in SEQ scores between the prototypes, independent of the order they were shown. 
-            * **order[T.TB] (Main Order Effect):** This checks if the sequence itself changed how users scored the session. A significant p-value here means that participants who saw the Treatment then Baseline (TB) rated things systematically higher or lower overall than the other group. 
-            * **prototype[T.Treatment]:order[T.TB] (Interaction Effect):** This is the critical test for asymmetric order effects. If this p-value is significant (< 0.05), it means the effectiveness of the prototype depends on the order it was shown (e.g., the Treatment only scores higher if they saw the Baseline first). If this happens, you cannot fully trust a simple main treatment effect because the testing sequence confounded the results.
-        """)
-    
-    model = smf.mixedlm("overall_seq ~ prototype * order", data=long_df, groups=long_df["participant"])
-    results = model.fit()
-    st.code(results.summary().as_text(), language="text")
+with col_st2:
+    t, y, x, dl_col = chart_header("System Success Transitions", "Baseline", "Treatment", "sys_trans")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sys_crosstab = pd.crosstab(df['baseline_system_success'], df['treatment_system_success'], rownames=['Baseline'], colnames=['Treatment']).reindex(index=[0, 1, 2], columns=[0, 1, 2], fill_value=0)
+    sns.heatmap(sys_crosstab, annot=True, cmap='Greens', fmt='g', ax=ax, cbar=False)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    # Heatmaps deliberately omit format_axes()
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "sys_success_trans.png", key="dl_sys_trans", use_container_width=True)
+    st.pyplot(fig)
 
-    # B. Wilcoxon & Cohen's dz
-    st.subheader("Wilcoxon Signed Ranks Tests & Effect Size (Cohen's dz)")
-    with st.expander("What it does & How to interpret"):
-        st.write("""
-        **Wilcoxon Signed Ranks Test:**
-        * **What it does:** This is a non-parametric test used to compare two related samples to assess whether their population mean ranks differ. It is the non-parametric equivalent of a paired t-test.
-        * **Why we use it here:** The Single Ease Question (SEQ) uses a 7-point Likert scale. Because this data is ordinal (ranked categories) rather than continuous, it often violates the assumption of normal distribution required for a standard t-test. The Wilcoxon test safely handles this ordinal data by comparing the magnitude and direction of the differences in SEQ scores between the baseline and treatment for each participant.
-        * **How to interpret:** Significant p-value (< 0.05): Users found a statistically significant difference in the ease of use between the two prototypes. Check the median scores to see which one performed better.
-        
-        **Effect Size (Cohen's dz):**
-        * **What it does:** While p-values tell you if a statistically significant difference exists, effect size tells you how big or meaningful that difference actually is. Cohen’s dz is the specific variation of Cohen's d used for within-subjects (paired) designs.
-        * **Why we use it here:** With a large enough sample size, even tiny, practically useless differences can become statistically significant. Calculating dz standardizes the difference so you can understand the true impact of the treatment.
-        * **How to interpret:** Standard benchmarks for Cohen's dz (though context always matters in UX): 
-            * ~0.2: Small effect (a minor improvement) 
-            * ~0.5: Medium effect (a noticeable improvement) 
-            * ~0.8 or higher: Large effect (a massive difference in the user experience)
-        """)
-        
-    stat, p_val_wilcoxon = wilcoxon(df["baseline_overall_seq"], df["treatment_overall_seq"])
-    std_diff = df["seq_difference"].std(ddof=1)
-    cohens_dz = df["seq_difference"].mean() / std_diff if std_diff != 0 else 0
-    
-    col_w1, col_w2 = st.columns(2)
-    col_w1.metric(label="Wilcoxon P-Value", value=f"{p_val_wilcoxon:.5f}")
-    col_w2.metric(label="Cohen's dz", value=f"{cohens_dz:.3f}")
 
-    # C. McNemar Test
-    st.subheader("McNemar Test - Task Success")
-    with st.expander("What it does & How to interpret"):
-        st.write("""
-        * **What it does:** The McNemar test is used to determine if there is a statistically significant difference in proportions between two paired groups. It is specifically designed for binary, categorical data (e.g., Pass/Fail or Yes/No).
-        * **Why we use it here:** Because the same participants completed tasks on both prototypes, their success rates are dependent. The McNemar test ignores the users who had the same outcome on both prototypes (e.g., failed both or passed both). Instead, it looks only at the "discordant pairs"—the users who failed the baseline but passed the treatment, versus those who passed the baseline but failed the treatment.
-        * **How to interpret:** Significant p-value (< 0.05): One prototype had a significantly higher success rate than the other. Non-significant p-value: The difference in task success between the baseline and treatment is not large enough to rule out random chance.
-        """)
-        
-    b_binary = (df["baseline_success"] > 0).astype(int)
-    t_binary = (df["treatment_success"] > 0).astype(int)
-    table = pd.crosstab(b_binary, t_binary)
-    
-    if table.shape == (2,2):
-        mcnemar_result = mcnemar(table, exact=True)
-        st.metric(label="McNemar P-Value", value=f"{mcnemar_result.pvalue:.5f}")
-    else:
-        st.info("Not enough variance in success rates to run McNemar's test.")
+# --- 3b. Order Effects Boxplots (Individual Charts) ---
+st.subheader("Order Effect Analysis (Mann-Whitney U)")
+df['user_success_diff'] = df['treatment_user_success'] - df['baseline_user_success']
+df['sys_success_diff'] = df['treatment_system_success'] - df['baseline_system_success']
 
-    # D. Binomial Test
-    st.subheader("Preference binomial test")
-    with st.expander("What it does & How to interpret"):
-        st.write("""
-        * **What it does:** The binomial test compares an observed frequency of two categories against an expected distribution. In most preference testing, the expected baseline distribution is a 50/50 split (random chance).
-        * **Why we use it here:** At the end of the session, you likely asked participants, "Which prototype did you prefer?". This test evaluates whether the number of votes for the 'treatment' prototype is statistically meaningful, or if it could have just happened by flipping a coin.
-        * **How to interpret:** Significant p-value (< 0.05): There is a clear, statistically significant preference for one prototype over the other. Non-significant p-value: The preference is too evenly split to declare a definitive winner; any slight advantage may just be statistical noise.
-        """)
-        
-    n_treatment = df["preferred_realworld"].eq("Treatment").sum()
-    binom_res = binomtest(n_treatment, len(df), p=0.5)
-    
-    col_b1, col_b2 = st.columns(2)
-    col_b1.metric(label="Treatment Preferences", value=f"{n_treatment} / {len(df)}")
-    col_b2.metric(label="Binomial P-Value", value=f"{binom_res.pvalue:.5f}")
+u_stat_user, p_user = stats.mannwhitneyu(df[df['order'] == 'BT']['user_success_diff'], df[df['order'] == 'TB']['user_success_diff'])
+u_stat_sys, p_sys = stats.mannwhitneyu(df[df['order'] == 'BT']['sys_success_diff'], df[df['order'] == 'TB']['sys_success_diff'])
+
+st.write(f"**User Success diff by Order p-value:** {p_user:.4f} | **System Success diff by Order p-value:** {p_sys:.4f}")
+
+col_oe1, col_oe2 = st.columns(2)
+with col_oe1:
+    t, y, x, dl_col = chart_header("Improvement in User Success", "Diff Score (Treatment - Baseline)", "Testing Order", "order_user")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sns.boxplot(data=df, x='order', y='user_success_diff', ax=ax, palette=palette[:2], showfliers=False)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "order_effects_user.png", key="dl_order_user", use_container_width=True)
+    st.pyplot(fig)
+
+with col_oe2:
+    t, y, x, dl_col = chart_header("Improvement in System Success", "Diff Score (Treatment - Baseline)", "Testing Order", "order_sys")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sns.boxplot(data=df, x='order', y='sys_success_diff', ax=ax, palette=palette[:2], showfliers=False)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "order_effects_sys.png", key="dl_order_sys", use_container_width=True)
+    st.pyplot(fig)
+
+
+# --- 3c. Sankey Plots ---
+st.subheader("Success Flow (Sankey Diagrams)")
+def build_sankey(df, base_col, treat_col, title):
+    transitions = df.groupby([base_col, treat_col]).size().reset_index(name='value')
+    node_colors = [NHS_COLORS.get("red", "red"), NHS_COLORS.get("yellow", "orange"), NHS_COLORS.get("green", "green")] * 2
+    nodes = ['Base 0: Fail', 'Base 1: Friction', 'Base 2: Easy', 'Treat 0: Fail', 'Treat 1: Friction', 'Treat 2: Easy']
+    links = [{'source': int(row[base_col]), 'target': int(row[treat_col]) + 3, 'value': row['value']} for _, row in transitions.iterrows()]
+    fig = go.Figure(data=[go.Sankey(node=dict(pad=15, thickness=20, line=dict(color="black", width=0.5), label=nodes, color=node_colors),
+                                    link=dict(source=[l['source'] for l in links], target=[l['target'] for l in links], value=[l['value'] for l in links]))])
+    fig.update_layout(title_text=title, font_size=12, height=400, margin=dict(t=40, l=0, r=0, b=0))
+    return fig
+
+sk1, sk2 = st.columns(2)
+with sk1:
+    t_sk1, _, _, dl_sk1 = chart_header("User Success Transitions", "", "", "sankey_user")
+    fig_sk1 = build_sankey(df, 'baseline_user_success', 'treatment_user_success', t_sk1)
+    with dl_sk1: st.download_button("Download HTML", fig_sk1.to_html(), "user_sankey.html", key="dl_sk1", use_container_width=True)
+    st.plotly_chart(fig_sk1, use_container_width=True)
+
+with sk2:
+    t_sk2, _, _, dl_sk2 = chart_header("System Success Transitions", "", "", "sankey_sys")
+    fig_sk2 = build_sankey(df, 'baseline_system_success', 'treatment_system_success', t_sk2)
+    with dl_sk2: st.download_button("Download HTML", fig_sk2.to_html(), "system_sankey.html", key="dl_sk2", use_container_width=True)
+    st.plotly_chart(fig_sk2, use_container_width=True)
+
+st.divider()
+
+# ==========================================
+# SECTION 4: SEQ SCORES
+# ==========================================
+st.header("4. Single Ease Question (SEQ)")
+
+with st.expander("What it does & How to interpret (Boxplots & Wilcoxon)"):
+    st.write("SEQ measures perceived ease of a task on a 1-7 scale. The Wilcoxon test compares each user's score on the Baseline vs Treatment. Look for the median line inside the box to move upwards (closer to 7).")
+
+find_stat, find_p = stats.wilcoxon(df['baseline_seq_find'], df['treatment_seq_find'])
+understand_stat, understand_p = stats.wilcoxon(df['baseline_seq_understand'], df['treatment_seq_understand'])
+
+st.write(f"**SEQ Find P-Value:** {find_p:.4f} | **SEQ Understand P-Value:** {understand_p:.4f}")
+
+df_find = pd.melt(df[['baseline_seq_find', 'treatment_seq_find']], var_name='Prototype', value_name='SEQ_Score')
+df_find['Prototype'] = df_find['Prototype'].map({'baseline_seq_find': 'Baseline', 'treatment_seq_find': 'Treatment'})
+
+df_understand = pd.melt(df[['baseline_seq_understand', 'treatment_seq_understand']], var_name='Prototype', value_name='SEQ_Score')
+df_understand['Prototype'] = df_understand['Prototype'].map({'baseline_seq_understand': 'Baseline', 'treatment_seq_understand': 'Treatment'})
+
+col_seq1, col_seq2 = st.columns(2)
+with col_seq1:
+    t, y, x, dl_col = chart_header("Ease of Finding Results", "SEQ Score (1-7)", "Prototype", "seq_find")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sns.boxplot(data=df_find, x='Prototype', y='SEQ_Score', ax=ax, palette=palette[:2], width=0.5, showfliers=False)
+    sns.stripplot(data=df_find, x='Prototype', y='SEQ_Score', ax=ax, color='black', alpha=0.6, jitter=True)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    ax.set_ylim(0.5, 7.5)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "seq_finding.png", key="dl_seq_find", use_container_width=True)
+    st.pyplot(fig)
+
+with col_seq2:
+    t, y, x, dl_col = chart_header("Ease of Understanding Results", "SEQ Score (1-7)", "Prototype", "seq_und")
+    fig, ax = plt.subplots(figsize=(6, 4))
+    sns.boxplot(data=df_understand, x='Prototype', y='SEQ_Score', ax=ax, palette=palette[:2], width=0.5, showfliers=False)
+    sns.stripplot(data=df_understand, x='Prototype', y='SEQ_Score', ax=ax, color='black', alpha=0.6, jitter=True)
+    ax.set_title(t); ax.set_ylabel(y); ax.set_xlabel(x)
+    ax.set_ylim(0.5, 7.5)
+    format_axes(ax)
+    with dl_col: st.download_button("Download as PNG", download_plot(fig), "seq_understanding.png", key="dl_seq_und", use_container_width=True)
+    st.pyplot(fig)
+
+st.divider()
+
+# ==========================================
+# SECTION 5: PREFERENCES
+# ==========================================
+st.header("5. Final Preferences")
+
+with st.expander("What it does & How to interpret (Binomial Test)"):
+    st.write("Evaluates binary choices using an exact Binomial test against a 50/50 chance baseline. A p-value < 0.05 proves the group strongly prefers one design over the other.")
+
+easier_t_count = (df['easier_design'] == 'T').sum()
+easier_b_count = (df['easier_design'] == 'B').sum()
+easier_p = stats.binomtest(easier_t_count, n=n_total, p=0.5).pvalue
+
+pref_t_count = (df['preferred_realworld'] == 'T').sum()
+pref_b_count = (df['preferred_realworld'] == 'B').sum()
+pref_p = stats.binomtest(pref_t_count, n=n_total, p=0.5).pvalue
+
+st.write(f"**Easier Design P-Value:** {easier_p:.4f} | **Preferred Real World P-Value:** {pref_p:.4f}")
+
+col_pref1, col_pref2 = st.columns([2, 1])
+with col_pref1:
+    t_pref, y_pref, x_pref, dl_pref = chart_header("Participant Preferences: Baseline vs Treatment", "Number of Participants", "Selected Prototype", "pref")
+    fig_pref, ax_pref = plt.subplots(figsize=(8, 5))
+    pref_data = pd.DataFrame({'Easier Design': [easier_b_count, easier_t_count], 'Preferred in Real World': [pref_b_count, pref_t_count]}, index=['Baseline (B)', 'Treatment (T)'])
+
+    pref_data.T.plot(kind='bar', stacked=True, ax=ax_pref, color=palette[:2], edgecolor='black')
+    ax_pref.axhline(n_total / 2, color=NHS_COLORS.get("red", "red"), linestyle='--', label='50% Threshold')
+    ax_pref.set_title(t_pref); ax_pref.set_ylabel(y_pref); ax_pref.set_xlabel(x_pref)
+    ax_pref.set_xticklabels(ax_pref.get_xticklabels(), rotation=0)
+    format_axes(ax_pref)
+
+    for c in ax_pref.containers:
+        ax_pref.bar_label(c, label_type='center', color='white', weight='bold')
+
+    ax_pref.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    with dl_pref: st.download_button("Download as PNG", download_plot(fig_pref), "preferences.png", key="dl_pref_btn", use_container_width=True)
+    st.pyplot(fig_pref)
