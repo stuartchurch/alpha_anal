@@ -1,0 +1,17 @@
+participant_no,order,nhs_app_use,digital_literacy,age,baseline_firstchoice,treatment_firstchoice,baseline_user_success,baseline_system_success,baseline_seq_find,baseline_seq_understand,treatment_user_success,treatment_system_success,treatment_seq_find,treatment_seq_understand,easier_design,preferred_realworld
+P01,BT,monthly,2,18 - 24,TR,TR,0,0,5,6,1,1,5,6,T,T
+P02,BT,rarely,5,25 - 34,M,TR,2,2,3,6,2,2,4,7,T,B
+P03,BT,weekly,1,35 - 44,TR,TR,1,1,3,4,2,2,4,6,T,T
+P04,TB,weekly,5,35 - 44,M,TR,1,1,4,4,2,2,4,5,T,T
+P05,TB,monthly,4,55 - 64,TR,TR,1,1,3,4,2,2,4,5,T,T
+P06,TB,rarely,2,45 - 54,M,TR,0,0,2,4,0,0,3,4,T,T
+P07,TB,rarely,1,55 - 64,TR,M,1,1,3,6,2,2,4,6,T,T
+P08,TB,never,3,35 - 44,M,TR,0,0,2,6,1,1,2,7,T,T
+P09,BT,weekly,5,45 - 54,M,TR,2,2,5,3,2,2,6,5,T,T
+P10,TB,rarely,2,25 - 34,TR,TR,1,1,5,5,1,1,6,6,T,T
+P11,BT,monthly,4,25 - 34,M,TR,1,0,4,4,2,2,6,5,T,T
+P12,BT,weekly,4,45 - 54,M,M,0,0,5,4,1,1,5,5,T,T
+P13,TB,never,5,45 - 54,M,TR,1,0,5,4,1,0,6,5,T,T
+P14,TB,rarely,2,25 - 34,M,M,1,1,2,4,1,1,2,6,B,T
+P15,BT,monthly,1,35 - 44,M,M,1,1,5,6,2,2,7,7,T,T
+P16,BT,weekly,4,18 - 24,M,TR,1,1,4,4,1,1,6,5,T,T
